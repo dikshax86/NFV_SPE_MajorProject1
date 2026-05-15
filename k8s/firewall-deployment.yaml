@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firewall
+  namespace: nfv-system
+  labels: 
+    app: firewall
+    tier: security 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: firewall
+  template:
+    metadata:
+      labels:
+        app: firewall
+        tier: security
+    spec:
+      containers:
+      - name: firewall
+        image: dknights/firewall:v1
+
+        ports:
+        - containerPort: 5000
+
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firewall
+  namespace: nfv-system
+  labels:
+    app: firewall
+spec:
+  selector:
+    app: firewall
+  ports:
+    - port: 5000
+      targetPort: 5000
+  type: ClusterIP
