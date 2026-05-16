@@ -1,0 +1,931 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!10},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!70!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=5pt,
+    showstringspaces=false
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{NFV - SPE Major Project}
+\lhead{Diksha}
+\cfoot{\thepage}
+
+\title{
+    \vspace{-2cm}
+    \textbf{\Huge Network Function Virtualization (NFV)}\\[0.5cm]
+    \Large SPE Major Project\\[0.3cm]
+    \large Complete Documentation \& Setup Guide
+}
+\author{
+    \textbf{Diksha}\\
+    GitHub: \texttt{dikshax86}\\
+    DockerHub: \texttt{dknights}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Project Overview}
+% ============================================================
+
+This project simulates \textbf{virtualized network functions} --- a firewall, a switch, and a traffic monitor --- deployed as microservices with a full CI/CD pipeline, container orchestration, monitoring, and centralized logging.
+
+\subsection{What is NFV?}
+
+Network Function Virtualization (NFV) is the concept of replacing dedicated network hardware (physical firewalls, switches, load balancers) with software running on standard servers. In this project, we implement three core network functions as lightweight Python microservices:
+
+\begin{itemize}
+    \item \textbf{Switch} --- Routes network traffic to appropriate destinations
+    \item \textbf{Firewall} --- Inspects and filters traffic based on rules
+    \item \textbf{Monitor} --- Logs all traffic for auditing and analysis
+\end{itemize}
+
+\subsection{Tech Stack}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Layer} & \textbf{Technology} \\
+\midrule
+Application & Python, Flask \\
+Containerization & Docker \\
+Orchestration & Kubernetes (Minikube) \\
+CI/CD & Jenkins (Pipeline) \\
+Image Registry & DockerHub (\texttt{dknights/}) \\
+Metrics Monitoring & Prometheus \\
+Metrics Visualization & Grafana \\
+Log Storage & Elasticsearch \\
+Log Visualization & Kibana \\
+Ingress & NGINX Ingress Controller \\
+Version Control & Git + GitHub \\
+\bottomrule
+\end{tabular}
+\caption{Technology Stack}
+\end{table}
+
+% ============================================================
+\section{Architecture}
+% ============================================================
+
+\subsection{System Architecture Diagram}
+
+\begin{verbatim}
+                    +-------------+
+                    |   Jenkins   |  <- CI/CD: Build, Push, Deploy
+                    +------+------+
+                           |
+                    +------v------+
+                    |  DockerHub  |  <- Image Registry (dknights/)
+                    +------+------+
+                           |
+              +------------v----------------+
+              |     Minikube (Kubernetes)    |
+              |      namespace: nfv-system   |
+              |                              |
+  Ingress --> |  +--------+                  |
+  (nfv.local) |  | Switch | <-- Entry point  |
+              |  +---+--+-+                  |
+              |      |  |                    |
+              |      v  v                    |
+              | +--------+  +---------+      |
+              | |Firewall|  | Monitor |      |
+              | +---+----+  +----+----+      |
+              |     |            |           |
+              |     v            v           |
+              | +----------+ +-----------+   |
+              | |Prometheus| |Elasticsearch|  |
+              | +----+-----+ +-----+-----+   |
+              |      v             v         |
+              | +---------+  +--------+      |
+              | | Grafana |  | Kibana |      |
+              | +---------+  +--------+      |
+              +------------------------------+
+\end{verbatim}
+
+\subsection{Component Roles}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Service} & \textbf{Port} & \textbf{Role} \\
+\midrule
+Switch & 5001 & Entry point. Routes traffic to Firewall and Monitor \\
+Firewall & 5000 & Security layer. Blocks malicious traffic \\
+Monitor & 5002 & Logging layer. Records all traffic to Elasticsearch \\
+Prometheus & 9090 & Scrapes firewall metrics every 5 seconds \\
+Grafana & 3000 & Visualizes metrics as dashboards \\
+Elasticsearch & 9200 & Stores full traffic logs as searchable documents \\
+Kibana & 5601 & Web UI to search and filter logs \\
+\bottomrule
+\end{tabular}
+\caption{Service Components}
+\end{table}
+
+% ============================================================
+\section{Microservices - Detailed Explanation}
+% ============================================================
+
+\subsection{Switch Service (Port 5001)}
+
+\textbf{File:} \texttt{switch-service/app.py}
+
+\textbf{Role:} The entry point of the entire system. Acts as a network switch/router.
+
+\textbf{What it does:}
+\begin{enumerate}
+    \item Receives incoming requests at \texttt{/route}
+    \item Forwards every request to the \textbf{Firewall} for security checking
+    \item Simultaneously sends the request to the \textbf{Monitor} for logging
+    \item Returns the firewall's decision (allowed/blocked) to the caller
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption=Switch Service Core Logic]
+@app.route("/route", methods=["POST"])
+def route_request():
+    # Send to Firewall for checking
+    fw_response = requests.post(FIREWALL_URL, json=request.json)
+
+    # Send to Monitor for logging
+    requests.post(MONITOR_URL, json=request.json)
+
+    # Return firewall's decision
+    return jsonify(fw_response.json()), fw_response.status_code
+\end{lstlisting}
+
+\subsection{Firewall Service (Port 5000)}
+
+\textbf{File:} \texttt{firewall-service/app.py}
+
+\textbf{Role:} The security layer that inspects and filters traffic.
+
+\textbf{What it does:}
+\begin{enumerate}
+    \item Checks the source IP against a blocklist (\texttt{192.168.1.10}, \texttt{10.0.0.1})
+    \item Scans request content for malicious keywords (\texttt{DROP}, \texttt{malicious}, \texttt{attack})
+    \item Returns \texttt{403 Blocked} or \texttt{200 Allowed}
+    \item Exposes Prometheus metrics at \texttt{/metrics}
+\end{enumerate}
+
+\textbf{Metrics exposed:}
+\begin{itemize}
+    \item \texttt{allowed\_requests\_total} --- Counter of allowed requests
+    \item \texttt{blocked\_requests\_total} --- Counter of blocked requests
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption=Firewall Rules]
+BLOCKED_IPS = ["192.168.1.10", "10.0.0.1"]
+BLOCKED_KEYWORDS = ["DROP", "malicious", "attack"]
+
+@app.route("/check", methods=["POST"])
+def firewall_check():
+    # Check blocked IPs
+    if ip in BLOCKED_IPS:
+        blocked_requests.inc()
+        return {"status": "blocked", "reason": "IP blocked"}, 403
+
+    # Check malicious content
+    for keyword in BLOCKED_KEYWORDS:
+        if keyword.lower() in content.lower():
+            blocked_requests.inc()
+            return {"status": "blocked", "reason": "malicious content"}, 403
+
+    allowed_requests.inc()
+    return {"status": "allowed"}, 200
+\end{lstlisting}
+
+\subsection{Monitor Service (Port 5002)}
+
+\textbf{File:} \texttt{monitor-service/app.py}
+
+\textbf{Role:} The logging/observability layer that records all traffic.
+
+\textbf{What it does:}
+\begin{enumerate}
+    \item Receives every request from the Switch (regardless of firewall decision)
+    \item Creates a log entry with IP, payload, and timestamp
+    \item Stores logs locally in memory (accessible via \texttt{/logs})
+    \item Sends logs to Elasticsearch for persistent storage
+    \item Retries up to 3 times if Elasticsearch is unavailable
+\end{enumerate}
+
+\begin{lstlisting}[language=Python, caption=Monitor Logging Logic]
+ELASTIC_URL = "http://elasticsearch:9200/logs/_doc"
+
+@app.route("/log", methods=["POST"])
+def log_request():
+    entry = {
+        "ip": request.headers.get("X-Forwarded-For"),
+        "data": request.json,
+        "timestamp": datetime.now().isoformat()
+    }
+    logs.append(entry)  # Local storage
+    requests.post(ELASTIC_URL, json=entry)  # Elasticsearch
+    return {"status": "logged"}, 200
+\end{lstlisting}
+
+% ============================================================
+\section{Monitoring vs Logging - Key Difference}
+% ============================================================
+
+\begin{tcolorbox}[colback=blue!5, colframe=blue!50!black, title=Prometheus + Grafana (Monitoring)]
+\textbf{What:} Collects NUMBERS (metrics)\\
+\textbf{Example:} ``There were 50 blocked requests in the last hour''\\
+\textbf{Use case:} Real-time dashboards, alerting, trend analysis\\
+\textbf{Data format:} Time-series (metric name + value + timestamp)
+\end{tcolorbox}
+
+\begin{tcolorbox}[colback=green!5, colframe=green!50!black, title=Elasticsearch + Kibana (Logging)]
+\textbf{What:} Stores FULL LOGS (detailed records)\\
+\textbf{Example:} ``IP 192.168.1.10 sent payload \{DROP table\} at 3:42 PM''\\
+\textbf{Use case:} Searching, filtering, forensics, auditing\\
+\textbf{Data format:} JSON documents (IP, payload, timestamp)
+\end{tcolorbox}
+
+\textbf{Summary:}
+\begin{itemize}
+    \item Grafana answers: \textit{``How much traffic?''} (graphs over time)
+    \item Kibana answers: \textit{``What was in the traffic?''} (searchable details)
+\end{itemize}
+
+% ============================================================
+\section{CI/CD Pipeline (Jenkins)}
+% ============================================================
+
+\subsection{Pipeline Stages}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{8cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Stage} & \textbf{What it does} \\
+\midrule
+1 & Checkout & Clones code from GitHub (\texttt{dikshax86/NFV\_SPE\_MajorProject1}) \\
+2 & Build Images & Builds Docker images for all 3 services \\
+3 & Login to DockerHub & Authenticates using Jenkins credential \texttt{DockerHubCred} \\
+4 & Push Images & Pushes images to DockerHub (\texttt{dknights/}) \\
+5 & Deploy to K8s & Runs \texttt{deploy.sh} to apply all K8s manifests \\
+\bottomrule
+\end{tabular}
+\caption{Jenkins Pipeline Stages}
+\end{table}
+
+\subsection{Pipeline Flow Diagram}
+
+\begin{verbatim}
+Developer pushes code to GitHub
+         |
+         v
+Jenkins detects change (or manual Build Now)
+         |
+         v
+[Checkout] -> Clone from GitHub
+         |
+         v
+[Build Images] -> docker build (firewall, switch, monitor)
+         |
+         v
+[Login to DockerHub] -> docker login using DockerHubCred
+         |
+         v
+[Push Images] -> docker push dknights/firewall:v1
+              -> docker push dknights/switch:v1
+              -> docker push dknights/monitor:v1
+         |
+         v
+[Deploy to K8s] -> kubectl apply all manifests
+               -> kubectl rollout restart
+\end{verbatim}
+
+\subsection{Jenkinsfile}
+
+\begin{lstlisting}[caption=Jenkinsfile]
+pipeline {
+    agent any
+    environment {
+        DOCKER_USER = "dknights"
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                url: 'https://github.com/dikshax86/NFV_SPE_MajorProject1.git'
+            }
+        }
+        stage('Build Images') {
+            steps {
+                sh '''
+                docker build -t $DOCKER_USER/firewall:v1 ./firewall-service
+                docker build -t $DOCKER_USER/switch:v1 ./switch-service
+                docker build -t $DOCKER_USER/monitor:v1 ./monitor-service
+                '''
+            }
+        }
+        stage('Login to DockerHub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'DockerHubCred',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD')]) {
+                    sh 'echo $DOCKER_PASSWORD | docker login
+                        -u $DOCKER_USERNAME --password-stdin'
+                }
+            }
+        }
+        stage('Push Images') {
+            steps {
+                sh '''
+                docker push $DOCKER_USER/firewall:v1
+                docker push $DOCKER_USER/switch:v1
+                docker push $DOCKER_USER/monitor:v1
+                '''
+            }
+        }
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh 'chmod +x deploy.sh'
+                sh './deploy.sh'
+            }
+        }
+    }
+}
+\end{lstlisting}
+
+% ============================================================
+\section{Kubernetes Deployment}
+% ============================================================
+
+\subsection{Kubernetes Concepts Used}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{Concept} & \textbf{Purpose in this project} \\
+\midrule
+Namespace & \texttt{nfv-system} isolates our project resources \\
+Deployment & Manages pod replicas and rolling updates \\
+Service (ClusterIP) & Internal DNS: \texttt{firewall:5000}, \texttt{switch:5001}, \texttt{monitor:5002} \\
+Service (NodePort) & External access: Grafana (32210), Kibana (30602) \\
+Ingress & Maps \texttt{nfv.local} hostname to Switch service \\
+PersistentVolume & 1Gi disk for Elasticsearch data (survives restarts) \\
+ConfigMap & Stores Prometheus scrape configuration \\
+\bottomrule
+\end{tabular}
+\caption{Kubernetes Concepts}
+\end{table}
+
+\subsection{Manifest Files}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{namespace.yaml} & Creates \texttt{nfv-system} namespace \\
+\texttt{storage.yaml} & PV + PVC for Elasticsearch (1Gi) \\
+\texttt{firewall-deployment.yaml} & Firewall pod + ClusterIP service \\
+\texttt{switch-deployment.yaml} & Switch pod + ClusterIP service \\
+\texttt{monitor-deployment.yaml} & Monitor pod + ClusterIP service \\
+\texttt{prometheus-config.yaml} & ConfigMap with scrape targets \\
+\texttt{prometheus.yaml} & Prometheus deployment + service \\
+\texttt{grafana.yaml} & Grafana deployment + NodePort service \\
+\texttt{elasticsearch.yaml} & Elasticsearch deployment + service \\
+\texttt{kibana.yaml} & Kibana deployment + NodePort service \\
+\texttt{ingress.yaml} & NGINX ingress for \texttt{nfv.local} \\
+\bottomrule
+\end{tabular}
+\caption{Kubernetes Manifest Files}
+\end{table}
+
+\subsection{Deploy Script}
+
+\begin{lstlisting}[language=bash, caption=deploy.sh]
+#!/bin/bash
+kubectl apply -f k8s/namespace.yaml
+kubectl apply -f k8s/storage.yaml
+kubectl apply -f k8s/prometheus-config.yaml
+kubectl apply -f k8s/prometheus.yaml
+kubectl apply -f k8s/grafana.yaml
+kubectl apply -f k8s/elasticsearch.yaml
+kubectl apply -f k8s/kibana.yaml
+kubectl apply -f k8s/firewall-deployment.yaml
+kubectl apply -f k8s/monitor-deployment.yaml
+kubectl apply -f k8s/switch-deployment.yaml
+kubectl apply -f k8s/ingress.yaml
+
+kubectl rollout restart deployment firewall -n nfv-system
+kubectl rollout restart deployment monitor -n nfv-system
+kubectl rollout restart deployment switch -n nfv-system
+\end{lstlisting}
+
+% ============================================================
+\section{Request Flow (End to End)}
+% ============================================================
+
+\begin{verbatim}
+1. User sends: POST http://nfv.local/route {"message": "hello"}
+        |
+        v
+2. [NGINX Ingress Controller]
+   - Matches host "nfv.local" and path "/"
+   - Forwards to Switch service on port 5001
+        |
+        v
+3. [Switch Service - port 5001]
+   - Receives the request at /route
+   - Sends to Firewall at http://firewall:5000/check
+   - Sends to Monitor at http://monitor:5002/log
+        |
+        +-----> [Firewall Service - port 5000]
+        |          - Checks IP against blocklist
+        |          - Checks content for malicious keywords
+        |          - Returns: allowed (200) or blocked (403)
+        |          - Increments Prometheus counter
+        |
+        +-----> [Monitor Service - port 5002]
+        |          - Creates log entry {ip, data, timestamp}
+        |          - Stores in memory + sends to Elasticsearch
+        |
+        v
+4. [Switch returns Firewall's response to user]
+   - {"status": "allowed"} with 200
+   - OR {"status": "blocked", "reason": "..."} with 403
+\end{verbatim}
+
+% ============================================================
+\section{Monitoring Flow}
+% ============================================================
+
+\begin{verbatim}
+Every 5 seconds (background process):
+
+    Prometheus ----scrapes----> http://firewall:5000/metrics
+                                     |
+                                     v
+                              allowed_requests_total = 12
+                              blocked_requests_total = 5
+                                     |
+                              Stored with timestamp
+                                     |
+                                     v
+    Grafana ----queries----> Prometheus
+                                     |
+                                     v
+                     Displays real-time graphs on dashboard
+\end{verbatim}
+
+% ============================================================
+\section{Logging Flow}
+% ============================================================
+
+\begin{verbatim}
+On every request:
+
+    Monitor Service ----POST----> Elasticsearch (port 9200)
+                                         |
+                                  Stores JSON document:
+                                  {
+                                    "ip": "192.168.49.1",
+                                    "data": {"message": "hello"},
+                                    "timestamp": "2026-05-15T15:39:51"
+                                  }
+                                         |
+    Kibana ----reads----> Elasticsearch
+                                         |
+                              User searches/filters logs in UI
+\end{verbatim}
+
+% ============================================================
+\section{Complete Setup Guide}
+% ============================================================
+
+\subsection{Prerequisites}
+
+\begin{itemize}
+    \item Docker installed and running
+    \item Minikube installed
+    \item kubectl installed
+    \item Jenkins installed
+    \item Java (for Jenkins)
+\end{itemize}
+
+\subsection{Step 1: Start Minikube}
+
+\begin{lstlisting}[language=bash]
+minikube start
+\end{lstlisting}
+
+Starts a local single-node Kubernetes cluster.
+
+\subsection{Step 2: Enable Ingress Addon}
+
+\begin{lstlisting}[language=bash]
+minikube addons enable ingress
+\end{lstlisting}
+
+Installs the NGINX Ingress Controller so external traffic can reach services via \texttt{nfv.local}.
+
+\subsection{Step 3: Add nfv.local to /etc/hosts}
+
+\begin{lstlisting}[language=bash]
+echo "$(minikube ip) nfv.local" | sudo tee -a /etc/hosts
+\end{lstlisting}
+
+Maps the hostname \texttt{nfv.local} to Minikube's IP address.
+
+\subsection{Step 4: Login to DockerHub}
+
+\begin{lstlisting}[language=bash]
+docker login -u dknights
+\end{lstlisting}
+
+Enter your DockerHub password when prompted.
+
+\subsection{Step 5: Give Jenkins Access to Docker}
+
+\begin{lstlisting}[language=bash]
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins
+\end{lstlisting}
+
+Adds jenkins user to docker group so it can build/push images.
+
+\subsection{Step 6: Give Jenkins Access to kubectl}
+
+\begin{lstlisting}[language=bash]
+# Copy kubeconfig
+sudo mkdir -p /var/lib/jenkins/.kube
+sudo cp ~/.kube/config /var/lib/jenkins/.kube/config
+sudo chown -R jenkins:jenkins /var/lib/jenkins/.kube
+
+# Copy minikube certificates
+sudo mkdir -p /var/lib/jenkins/.minikube/profiles/minikube
+sudo cp ~/.minikube/ca.crt /var/lib/jenkins/.minikube/ca.crt
+sudo cp ~/.minikube/profiles/minikube/client.crt \
+    /var/lib/jenkins/.minikube/profiles/minikube/client.crt
+sudo cp ~/.minikube/profiles/minikube/client.key \
+    /var/lib/jenkins/.minikube/profiles/minikube/client.key
+sudo chown -R jenkins:jenkins /var/lib/jenkins/.minikube
+
+# Fix paths in kubeconfig
+sudo sed -i \
+    "s|/home/$(whoami)/.minikube|/var/lib/jenkins/.minikube|g" \
+    /var/lib/jenkins/.kube/config
+\end{lstlisting}
+
+\subsection{Step 7: Verify Jenkins kubectl Access}
+
+\begin{lstlisting}[language=bash]
+sudo -u jenkins kubectl get nodes
+\end{lstlisting}
+
+Expected output:
+\begin{verbatim}
+NAME       STATUS   ROLES           AGE   VERSION
+minikube   Ready    control-plane   ...   v1.35.1
+\end{verbatim}
+
+\subsection{Step 8: Configure DockerHub Credentials in Jenkins UI}
+
+\begin{enumerate}
+    \item Open Jenkins: \texttt{http://localhost:8080}
+    \item Go to \textbf{Manage Jenkins} $\rightarrow$ \textbf{Credentials} $\rightarrow$ \textbf{System} $\rightarrow$ \textbf{Global credentials}
+    \item Click \textbf{Add Credentials}
+    \item Fill in:
+    \begin{itemize}
+        \item Kind: \texttt{Username with password}
+        \item Username: \texttt{dknights}
+        \item Password: Your DockerHub password
+        \item ID: \texttt{DockerHubCred}
+        \item Description: \texttt{Docker Hub Credentials}
+    \end{itemize}
+    \item Click \textbf{Create}
+\end{enumerate}
+
+\subsection{Step 9: Create Jenkins Pipeline Job}
+
+\begin{enumerate}
+    \item In Jenkins $\rightarrow$ \textbf{New Item}
+    \item Name: \texttt{NFV}
+    \item Type: \textbf{Pipeline}
+    \item Under Pipeline section:
+    \begin{itemize}
+        \item Definition: \texttt{Pipeline script from SCM}
+        \item SCM: \texttt{Git}
+        \item Repository URL: \texttt{https://github.com/dikshax86/NFV\_SPE\_MajorProject1.git}
+        \item Branch: \texttt{*/main}
+        \item Script Path: \texttt{Jenkinsfile}
+    \end{itemize}
+    \item Click \textbf{Save}
+\end{enumerate}
+
+\subsection{Step 10: Run the Pipeline}
+
+Click \textbf{Build Now} on the pipeline job in Jenkins.
+
+\subsection{Step 11: Verify Deployment}
+
+\begin{lstlisting}[language=bash]
+kubectl get all -n nfv-system
+\end{lstlisting}
+
+All pods should show \texttt{STATUS: Running}.
+
+% ============================================================
+\section{Testing Guide}
+% ============================================================
+
+\subsection{Test 1: Allowed Request}
+
+\begin{lstlisting}[language=bash]
+curl -X POST http://nfv.local/route \
+  -H "Content-Type: application/json" \
+  -d '{"message": "hello world"}'
+\end{lstlisting}
+
+\textbf{Expected response:}
+\begin{verbatim}
+{"status": "allowed"}
+\end{verbatim}
+
+\subsection{Test 2: Blocked Request (Malicious Keyword)}
+
+\begin{lstlisting}[language=bash]
+curl -X POST http://nfv.local/route \
+  -H "Content-Type: application/json" \
+  -d '{"message": "malicious attack"}'
+\end{lstlisting}
+
+\textbf{Expected response:}
+\begin{verbatim}
+{"status": "blocked", "reason": "malicious content"}
+\end{verbatim}
+
+\subsection{Test 3: Blocked Request (Blocked IP)}
+
+\begin{lstlisting}[language=bash]
+curl -X POST http://nfv.local/route \
+  -H "Content-Type: application/json" \
+  -H "X-Forwarded-For: 192.168.1.10" \
+  -d '{"message": "hello"}'
+\end{lstlisting}
+
+\textbf{Expected response:}
+\begin{verbatim}
+{"status": "blocked", "reason": "IP blocked"}
+\end{verbatim}
+
+\subsection{Test 4: Generate Bulk Traffic}
+
+\begin{lstlisting}[language=bash]
+# 10 allowed requests
+for i in {1..10}; do
+  curl -s -X POST http://nfv.local/route \
+    -H "Content-Type: application/json" \
+    -d '{"message": "hello"}'
+done
+
+# 5 blocked requests
+for i in {1..5}; do
+  curl -s -X POST http://nfv.local/route \
+    -H "Content-Type: application/json" \
+    -d '{"message": "malicious attack"}'
+done
+\end{lstlisting}
+
+\subsection{Test 5: Check Monitor Logs}
+
+\begin{lstlisting}[language=bash]
+kubectl exec -n nfv-system deployment/monitor -- \
+  python -c "import requests; \
+  r = requests.get('http://localhost:5002/logs'); \
+  print(r.json())"
+\end{lstlisting}
+
+\subsection{Test 6: Check Elasticsearch Logs}
+
+\begin{lstlisting}[language=bash]
+kubectl exec -n nfv-system deployment/elasticsearch -- \
+  curl -s http://localhost:9200/logs/_search?pretty
+\end{lstlisting}
+
+\subsection{Test 7: Check Prometheus Metrics}
+
+\begin{lstlisting}[language=bash]
+kubectl exec -n nfv-system deployment/prometheus -- \
+  wget -qO- "http://localhost:9090/api/v1/query?query=allowed_requests_total"
+\end{lstlisting}
+
+% ============================================================
+\section{Accessing the UIs}
+% ============================================================
+
+\subsection{Grafana (Metrics Dashboards)}
+
+\begin{itemize}
+    \item \textbf{URL:} \texttt{http://<minikube-ip>:32210}
+    \item \textbf{Login:} admin / admin
+    \item \textbf{Purpose:} Real-time graphs of firewall traffic
+\end{itemize}
+
+\textbf{Setup Grafana Dashboard:}
+\begin{enumerate}
+    \item Login with admin/admin
+    \item Go to Connections $\rightarrow$ Data sources $\rightarrow$ Add Prometheus
+    \item URL: \texttt{http://prometheus:9090}
+    \item Save \& Test
+    \item Create Dashboard $\rightarrow$ Add Panel
+    \item Metric: \texttt{allowed\_requests\_total}
+    \item Add Query B: \texttt{blocked\_requests\_total}
+    \item Save dashboard
+\end{enumerate}
+
+\subsection{Kibana (Log Search)}
+
+\begin{itemize}
+    \item \textbf{URL:} \texttt{http://<minikube-ip>:30602}
+    \item \textbf{Purpose:} Search and filter traffic logs
+\end{itemize}
+
+\textbf{Setup Kibana:}
+\begin{enumerate}
+    \item Open Kibana URL
+    \item Go to Management $\rightarrow$ Data Views
+    \item Create index pattern: \texttt{logs*}
+    \item Time field: \texttt{timestamp}
+    \item Go to Discover to search logs
+\end{enumerate}
+
+\subsection{Prometheus (Raw Metrics)}
+
+\begin{lstlisting}[language=bash]
+kubectl port-forward svc/prometheus 9090:9090 -n nfv-system
+\end{lstlisting}
+
+Then open: \texttt{http://localhost:9090}
+
+Type a metric name and click Execute:
+\begin{itemize}
+    \item \texttt{allowed\_requests\_total}
+    \item \texttt{blocked\_requests\_total}
+    \item \texttt{rate(allowed\_requests\_total[1m])}
+\end{itemize}
+
+% ============================================================
+\section{Docker Images}
+% ============================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}llp{5cm}@{}}
+\toprule
+\textbf{Image} & \textbf{Source} & \textbf{Description} \\
+\midrule
+\texttt{dknights/firewall:v1} & \texttt{firewall-service/} & Python Flask firewall \\
+\texttt{dknights/switch:v1} & \texttt{switch-service/} & Python Flask router \\
+\texttt{dknights/monitor:v1} & \texttt{monitor-service/} & Python Flask logger \\
+\texttt{grafana/grafana} & Official & Visualization \\
+\texttt{prom/prometheus} & Official & Metrics collector \\
+\texttt{elasticsearch:8.13.0} & Elastic official & Search engine \\
+\texttt{kibana:8.13.0} & Elastic official & Log UI \\
+\bottomrule
+\end{tabular}
+\caption{Docker Images Used}
+\end{table}
+
+% ============================================================
+\section{Troubleshooting}
+% ============================================================
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}lp{9cm}@{}}
+\toprule
+\textbf{Problem} & \textbf{Solution} \\
+\midrule
+Pods in ImagePullBackOff & Images not on DockerHub. Run Jenkins pipeline to build \& push. \\
+Pods in ContainerCreating & Minikube is pulling images. Wait 1-2 minutes. \\
+Pods in Terminating & Normal after rollout restart. Old pods shutting down. \\
+Jenkins Deploy fails & Copy fresh \texttt{\~{}/.kube/config} and minikube certs to Jenkins. \\
+Grafana shows No data & Configure Prometheus data source: \texttt{http://prometheus:9090} \\
+Elasticsearch empty & Send test requests first. Check monitor pod logs. \\
+\bottomrule
+\end{tabular}
+\caption{Common Issues}
+\end{table}
+
+% ============================================================
+\section{Useful Commands}
+% ============================================================
+
+\begin{lstlisting}[language=bash]
+# Check all resources
+kubectl get all -n nfv-system
+
+# Check pod logs
+kubectl logs deployment/firewall -n nfv-system
+kubectl logs deployment/switch -n nfv-system
+kubectl logs deployment/monitor -n nfv-system
+
+# Describe pod (for debugging)
+kubectl describe pod <pod-name> -n nfv-system
+
+# Port-forward Prometheus
+kubectl port-forward svc/prometheus 9090:9090 -n nfv-system
+
+# Restart a deployment
+kubectl rollout restart deployment firewall -n nfv-system
+
+# Delete everything and start fresh
+kubectl delete namespace nfv-system
+
+# Check minikube IP
+minikube ip
+
+# Check ingress
+kubectl get ingress -n nfv-system
+\end{lstlisting}
+
+% ============================================================
+\section{Project File Structure}
+% ============================================================
+
+\begin{verbatim}
+NFV_Diksha/
+|-- Jenkinsfile                    # CI/CD pipeline definition
+|-- deploy.sh                      # K8s deployment script
+|-- docker-compose.yml             # Local development setup
+|-- post.json                      # Sample test payload
+|
+|-- switch-service/                # Entry point microservice
+|   |-- app.py                     # Flask app (routes traffic)
+|   |-- Dockerfile                 # Container definition
+|   +-- requirements.txt           # Python dependencies
+|
+|-- firewall-service/              # Security microservice
+|   |-- app.py                     # Flask app (blocks/allows)
+|   |-- Dockerfile                 # Container definition
+|   +-- requirements.txt           # Python dependencies
+|
+|-- monitor-service/               # Logging microservice
+|   |-- app.py                     # Flask app (logs to ES)
+|   |-- Dockerfile                 # Container definition
+|   +-- requirements.txt           # Python dependencies
+|
++-- k8s/                           # Kubernetes manifests
+    |-- namespace.yaml
+    |-- storage.yaml
+    |-- firewall-deployment.yaml
+    |-- switch-deployment.yaml
+    |-- monitor-deployment.yaml
+    |-- ingress.yaml
+    |-- prometheus-config.yaml
+    |-- prometheus.yaml
+    |-- grafana.yaml
+    |-- elasticsearch.yaml
+    +-- kibana.yaml
+\end{verbatim}
+
+\end{document}
