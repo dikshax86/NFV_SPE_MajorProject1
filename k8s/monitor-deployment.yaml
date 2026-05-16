@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: monitor
-        image: ishakumarii/monitor:v3
+        image: dknights/monitor:v1
         ports:
         - containerPort: 5002
 ---

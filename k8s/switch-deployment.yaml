@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: switch
-        image: ishakumarii/switch:v3
+        image: dknights/switch:v1
         ports:
         - containerPort: 5001
 ---
