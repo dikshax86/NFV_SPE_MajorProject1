@@ -1,0 +1,34 @@
+Normal request: 
+curl http://nfv.local/route \
+-H "Content-Type: application/json" \
+-d '{"message":"hello"}'
+
+Blocked:
+curl http://nfv.local/route \
+-H "Content-Type: application/json" \
+-d '{"message":"attack detected"}'
+
+HTTP Status code 
+curl -i http://nfv.local/route \
+-H "Content-Type: application/json" \
+-d '{"message":"attack"}'
+
+Prometheus Metrics
+curl http://localhost:5000/metrics
+dashboards
+http://localhost:9090
+Grafana
+http://localhost:3000
+Elasticsearch+Kibana
+curl http://localhost:9202/logs/_search?pretty
+Kibana
+http://localhost:5601
+
+HPA autoscaling
+while true; do
+curl http://nfv.local/route \
+-H "Content-Type: application/json" \
+-d '{"message":"hello"}'
+done
+
+** kubectl get hpa -n nfv-system -w

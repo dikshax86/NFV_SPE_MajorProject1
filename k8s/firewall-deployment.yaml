@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
       - name: firewall
-        image: dknights/firewall:v1
+        image: ishakumarii/firewall:v1
 
         ports:
         - containerPort: 5000

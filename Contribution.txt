@@ -1,0 +1,25 @@
+ISHA:
+1. Developed a cloud-native NFV (Network Function Virtualization) platform using Python Flask microservices, 
+Docker, and Kubernetes.
+2. Implemented Switch, Firewall, and Monitor microservices with inter-service communication using Kubernetes 
+DNS-based service discovery.
+3. Designed and deployed Kubernetes infrastructure using Deployments, Services, Ingress, Namespaces, 
+and Horizontal Pod Autoscaler (HPA).
+4. Developed CI/CD automation pipeline using Jenkins, GitHub Webhooks, DockerHub, and ngrok for automated build 
+and deployment workflows.
+5. Performed containerization of all services using Docker and managed image versioning and registry integration 
+through DockerHub.
+6. Configured Kubernetes Ingress and NGINX Ingress Controller for domain-based routing using nfv.local.
+7. Implemented autoscaling using Kubernetes HPA and Metrics Server for dynamic resource scaling based on 
+CPU utilization.
+repared the complete project documentation and final technical report, including architecture diagrams, 
+deployment workflow, implementation details, monitoring setup, CI/CD pipeline explanation, testing results, 
+and troubleshooting analysis.
+DIKSHA: 
+1. Implemented firewall security logic for malicious traffic detection using blocked IP and keyword-based 
+filtering mechanisms.
+2. Integrated Prometheus monitoring with custom application metrics such as allowed_requests_total and 
+blocked_requests_total.
+3. Configured Grafana dashboards for real-time visualization of firewall traffic and monitoring metrics.
+4. Implemented centralized logging architecture using Elasticsearch and Kibana for log indexing, querying, 
+and visualization.
