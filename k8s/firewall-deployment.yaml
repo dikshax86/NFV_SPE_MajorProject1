@@ -20,6 +20,7 @@ spec:
       containers:
       - name: firewall
         image: dknights/firewall:v1
+        imagePullPolicy: Always
 
         ports:
         - containerPort: 5000
